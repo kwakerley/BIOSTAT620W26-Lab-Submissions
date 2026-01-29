@@ -1,0 +1,119 @@
+---
+title: "Lab3_Wakerley"
+author: "Kyle Wakerley"
+format: html
+editor: visual
+embed-resources: true
+---
+
+```{r download data}
+met = read.csv("C:/Users/kylew/Downloads/met_all.gz")
+library(dplyr)
+```
+
+```{r}
+dim(met)
+```
+
+There are 2377343 rows and 30 columns in the meteorological data set.
+
+```{r look at data}
+str(met)
+```
+
+```{r}
+summary(met[, c(3, 5, 6, 24, 10, 14)])
+
+met = met %>% mutate(elev = na_if(elev, 9999))
+summary(met$elev)
+
+met = met %>% mutate(temp = na_if(temp, -40)) 
+met = met %>% filter(!is.na(temp))
+summary(met$temp)
+
+
+```
+
+The highest elevation weather station is at 4113 meters. After removing the NA values, there is a new lowest temperature of -17.2 degrees Celcius.
+
+## Question 5: Checking
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+#| df-print: default
+
+
+low_temps = met %>% filter(temp < -16.8) %>% select(lat, lon, temp) 
+head(low_temps)
+
+#high_temps = met %>% filter(temp > 52) %>% select(lat, lon, temp)
+
+low_elevation = met %>% filter(elev == -13) %>% select(lat, lon, elev)
+head(low_elevation)
+
+high_elevation = met %>% filter(elev == 4113)
+head(high_elevation)
+```
+
+After checking the low and high temps, there are a few discrepancies. The low temperature of -17.2 aligns to a desert area east of colorado spring, Colorado. This area would not ever reach a temperature this cold and should be removed. Similarly, an area west of Corpus Christi, Texas had a recorded low of -17C. This is also unrealistic for the area. The lowest elevation recorded is -13 meters at the El Centro Naval Air Facility in California. A quick Google search confirms this to be true. The highest elevation is 4113 west of Denver in the mountains. This also seems realistic. 
+
+## Question 6: Selecting the Highest Station
+
+```{r summary statistics}
+high_elevation = high_elevation %>% filter(!is.na(wind.sp)) 
+
+cor(high_elevation$temp, high_elevation$wind.sp)
+
+high_elevation %>% select(temp, wind.sp, day, hour) %>% cor()
+
+```
+
+The correlation between temperature and wind speed for the highest station (in Colorado) is -0.093738. The Correlation between temperature and day is -0.0061308, temperature and hour is 0.43568, wind speed and day is 0.36431, and wind speed and hour is 0.088073.	
+
+## Question 7: Visualizing
+
+```{r pretty graphs}
+par(mfrow = c(2, 2))
+
+hist(met$elev, main = "Histogram of Elevations Across Stations", xlab = "Elevation(Meters)", col = "blue")
+hist(met$temp, main = "Histogram of Temperatures Across Stations", xlab = "Temperature(Celcius)", col = "orange")
+hist(met$wind.sp, main = "Histogram of Wind Speed Across Stations", xlab = "Wind Speed(Km/hr)", col = "lightblue")
+```
+
+```{r other graphs}
+#install.packages("leaflet")
+library(leaflet)
+leaflet(high_elevation) %>%
+  addProviderTiles('OpenStreetMap') %>% 
+  addCircles(lat=~lat,lng=~lon, opacity=1, fillOpacity=1, radius=100)
+```
+
+```{r}
+library(lubridate)
+high_elevation$date <- with(high_elevation, ymd_h(paste(year, month, day, hour, sep= ' ')))
+summary(high_elevation$date)
+elev = high_elevation[order(high_elevation$date), ]
+head(elev)
+
+```
+
+```{r plots of wind speed and temp}
+par(mfrow = c(1,2))
+plot(elev$date, elev$temp, main = "Scatterplot of Temperature Over Time", xlab = "Date", ylab = "Temperature (Celcius)" , col = "blue")
+plot(elev$date, elev$wind.sp, main = "Scatterplot of Wind Speed Over Time", xlab = "Date", ylab = "Wind Speed (M/s)", col = "orange")
+```
+## Question 8: Further Questions/Exploration
+
+```{r}
+met$elevation_bin = cut(met$elev, breaks = 10, include.lowest = TRUE)
+no_na_met = met %>% select(elev, wind.sp, elevation_bin) %>% filter(!is.na(elev), !is.na(wind.sp), !is.na(elevation_bin))
+plot_data = no_na_met %>% group_by(elevation_bin) %>% summarize(average_wind_speed = mean(wind.sp, na.rm = T))
+
+x = as.numeric(plot_data$elevation_bin)
+y = plot_data$average_wind_speed
+plot(x, y, xlab = " Elevation Bin Number", ylab = "Average Wind Speed (Km/hr)", main = "Plot Showing Average Wind Speed at Each Elevation Level", pch = "💨️")
+spline_fit = spline(x, y)
+lines(spline_fit, col = "lightblue", lwd = 2)
+```
+
