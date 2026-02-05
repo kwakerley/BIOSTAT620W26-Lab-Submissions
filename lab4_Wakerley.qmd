@@ -1,0 +1,153 @@
+---
+title: "Lab 4"
+author: "Kyle Wakerley"
+format: html
+editor: visual
+embed-resources: true
+---
+
+## Question 1
+
+```{r read in data}
+if (!file.exists("covid_processed.csv"))
+  download.file(
+    url = "https://raw.githubusercontent.com/dmcable/BIOSTAT620W26/main/data/covid/covid_processed.csv",
+    destfile = "covid_processed.csv",
+    method   = "libcurl",
+    timeout  = 60
+    )
+
+covid = read.csv("covid_processed.csv")
+library(dplyr)
+library(ggplot2)
+```
+
+## Question 2
+
+```{r}
+covid = covid %>% mutate(adj_pop = pop, 
+                 adj_cases = (cases/adj_pop)*100000,
+                 adj_hosp = (hosp/adj_pop)*100000,
+                 adj_booster = (booster/adj_pop)*100000,
+                 adj_series = (series/adj_pop)*100000,
+                 adj_deaths = (deaths/adj_pop)*100000
+                 ) 
+```
+
+```{r lubridating}
+library(lubridate)
+covid = covid %>% mutate(Date = ymd(date))
+```
+
+```{r state averages}
+avg_by_state = covid %>% group_by(state) %>% summarize(
+  avg_cases = mean(adj_cases),
+  avg_hosp = mean(adj_hosp),
+  avg_booster = mean(adj_booster),
+  avg_series = mean(adj_series),
+  avg_deaths = mean(adj_deaths)
+)
+
+avg_by_state
+
+regions = covid %>% select(state, region, region_name, pop, state_name) %>% unique()
+regions = regions[c(TRUE, FALSE), ]
+
+avg_by_state = inner_join(x = avg_by_state, y = regions,  by = "state") %>% mutate(high_pop = pop > 6441766)
+
+avg_by_state
+
+avg_by_state$region = as.factor(avg_by_state$region)
+avg_by_state$high_pop = as.numeric(avg_by_state$high_pop)
+
+```
+
+## Question 3:
+
+```{r violin plots}
+ggplot(data = covid) + geom_violin(aes(x = 1, y= adj_cases, fill = region)) + facet_wrap(~region, nrow = 1)
+```
+
+```{r}
+ggplot(data = covid) + geom_violin(aes(x = 1, y= adj_deaths, fill = region)) + facet_wrap(~region, nrow = 1)
+```
+
+I see that certain regions were hit especially hard by Covid. The weekly adjusted case rate was highest in regions 3,4,5, and 6 while the highest death rates were in regions 3, 4, and 5. Region 2 had the highest outlier for death rate. Region 3 had the highest adjusted cases per 100,000. 
+
+```{r}
+covid %>% filter(mmwr_week > 2 | mmwr_year == 2021) %>% ggplot(aes(x= Date, y = adj_cases, color = as.factor(region))) + geom_point(alpha = 0.5) + stat_smooth(method = "lm", se = F)
+```
+The default works better.
+
+```{r}
+covid %>% filter(mmwr_week >2 | mmwr_year == 2021) %>% ggplot(aes(x= Date, y = adj_cases, color = as.factor(region))) + geom_point(alpha = 0.6) + stat_smooth(span = 0.3, se = F)
+```
+There is a large spike in all regions around the start of 2021. Region 8 appears to be hit the hardest. There is a similar but smaller peak that pops up around September of 2021. 
+
+## Question 5
+
+```{r}
+avg_by_state %>% ggplot() + geom_bar(aes(x = high_pop, fill = region), position="dodge") + scale_fill_brewer(palette = "Spectral") + labs(x = "High Population? \n 1 is above Mean Population", y = "Number of States", title = "Barplot of States above or Below the Population Mean") + theme_bw()
+```
+
+It looks like region 8 has all of its states below the mean population. Regions 4 and 5 have the tied most states above the mean with 4 each. It appears region 2 has only 3 states in it. 
+
+## Question 6
+
+```{r stat_summary}
+ggplot(aes(x = region, y = avg_deaths), data = avg_by_state) + stat_summary(fun.data = "mean_sdl", geom = "bar", fill = "lightpink") + stat_summary(geom = "errorbar") + theme_bw() + labs(x= "Region Number", y = "Death Rate per week per 100,000")
+
+ggplot(aes(x = region, y = avg_series), data = avg_by_state) + stat_summary(fun.data = "mean_sdl", geom = "bar", fill = "lightblue") + stat_summary(geom = "errorbar") + theme_bw() + labs(x= "Region Number", y = "Cumulative Vaccinations per 100,000")
+  
+
+```
+
+I created two bar graphs with error bars for each region. Average deaths per 100,000 per week as well as cumulative vaccinations per 100,000 were plotted. We see regions 4 and 6 had the greatest average deaths per week per 100,000. Region 10, 1, and 2 had the lowest death rates. Regions 1,2,3, 9, and 10 had the highest vacination rates while regions 4 and 6 had the lowest. It seems like regions with higher vacination rates had lower death rates. 
+
+```{r}
+library(maps)
+us_map = map_data("state")
+
+covid_lower = avg_by_state %>% mutate(region = tolower(state_name))
+map_data =  us_map %>%
+  left_join(covid_lower, by = "region")
+
+top10 = covid_lower %>%
+  group_by(region) %>%    
+  summarise(avg_deaths = mean(avg_deaths, na.rm = TRUE)) %>%
+  arrange(desc(avg_deaths)) %>%
+  slice_head(n = 10)
+
+state_center = map_data %>%
+  group_by(region) %>%
+  summarise(long = mean(long), lat  = mean(lat))
+
+top10_star = top10 %>%
+  left_join(state_center, by = "region")
+
+ggplot(map_data, aes(x = long, y = lat, group = group, fill = avg_deaths)) +
+  geom_polygon(color = "black", size = 0.2) +
+  coord_fixed(1.3) +
+  labs(title = "Spatial trends of average Covid death rates in the United States") +
+  theme_void() + scale_fill_gradient2(low = "black", high = "tomato",midpoint = 2, name = "Covid Death Rate") + geom_text(data = top10_star, aes(x = long, y = lat), label = "★", color = "darkgreen", size = 6, inherit.aes = FALSE)
+
+```
+Looking at the map, we can see that most of the top 10 states with the highest average death rate were in the southern half of the United States (minus new Jersey). Mississippi had the highest death rate with over 3 per 100,000 per week. Vermont had the lowest death rate followed by Maine, Oregon, and Utah. These differences could be due to lack of covid infrastructure, lack of vaccination, or a combination of both. 
+
+```{r new ggplot extension}
+#devtools::install_github("davidsjoberg/ggbump")
+#install.packages("wesanderson")
+library(wesanderson)
+library(ggbump)
+
+covid_ranks = covid %>% filter(mmwr_year == "2021", region_name == "South Central", mmwr_week > 26) %>%  group_by(mmwr_week) %>% mutate(rank = rank(-adj_deaths, ties.method = "random")) %>% ungroup() 
+
+library(ggbump)
+
+ggplot(covid_ranks, aes(x = Date, y = rank, color = state_name, group = state_name)) + geom_bump(size = 2, smooth = 1) +
+  scale_y_reverse() + 
+  labs(y = " Region Rank", x = "Date", title = "Death Rate Ranks for the South Central Region \n for the Second half of 2021", color = "State Name") + scale_color_manual(values = wes_palette(n = 5, name = "Darjeeling1")) + theme_light()
+
+
+```
+This is the plot I created! I had to filter by subregion, year, and week to meet memory requirements and make the plot readable. 
