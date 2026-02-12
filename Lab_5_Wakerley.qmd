@@ -1,0 +1,111 @@
+---
+title: "Lab_5_Wakerley"
+author: "Kyle Wakerley"
+format: html
+editor: visual
+embed-resources: true
+---
+
+```{r}
+library(lubridate)
+library(dplyr)
+library(jsonlite)
+#install.packages('janitor')
+library(janitor)
+library(tidyr)
+library(tibble)
+#install.packages("httr2")
+library(httr2)
+```
+
+## Question 3: Tidying Population.csv
+
+```{r}
+
+if (!file.exists("population.csv"))
+  download.file(
+    url = 'https://raw.githubusercontent.com/dmcable/BIOSTAT620W26/main/data/covid/population.csv',
+    destfile = "population.csv",
+    method   = "libcurl",
+    timeout  = 60
+    )
+
+state_ab = setNames(state.abb, state.name) %>% as.data.frame()
+state_ab["District of Columbia",] = "DC"
+state_ab["Puerto Rico",] = "PR"
+
+state_ab = state_ab %>%
+  rownames_to_column()  %>%  rename(state_name = rowname)
+
+state_ab["District of Columbia",] = "DC"
+state_ab["Puerto Rico",] = "PR"
+
+
+population = read.csv('population.csv', header = T)
+population_complete = population %>% row_to_names(row_number = 1) %>% select(POP_2020, POP_2021, NAME) %>% pivot_longer(-NAME) %>% separate_wider_delim(name, delim = "_", names = c("name", "Year"), too_many = "merge") %>% select(NAME, Year, value) %>% rename(
+  state_name = NAME,
+  Population = value
+) %>% left_join(state_ab, by = "state_name") %>% rename(state = ".")
+
+head(population_complete)
+
+```
+
+## Question 4: Tidying JSON File
+
+```{r}
+url <- "https://github.com/datasciencelabs/2024/raw/refs/heads/main/data/regions.json"
+
+phs = fromJSON(url)
+phs_2 = phs %>%
+  unnest(cols = states, keep_empty = FALSE) %>%
+  unnest(cols = region) 
+
+phs_2$region_name[phs_2$region_name == 
+    "New York and New Jersey, Puerto Rico, Virgin Islands"] <- "New York and Co"
+
+phs_2 = phs_2 %>% rename(
+  state_name = states
+)
+
+phs_2$region = as.factor(phs_2$region)
+
+head(phs_2)
+```
+
+# Question 5 Left Join the Two Datasets
+
+```{r joining to popualtion}
+population_complete = population_complete %>% left_join(phs_2, by = "state_name") 
+population_complete$Year = as.numeric(population_complete$Year)
+head(population_complete)
+```
+
+## Question 6: SARS-COV2 Dataset
+
+```{r}
+api <- "https://data.cdc.gov/resource/pwn4-m3yp.json"
+request <- request(paste0(api,paste0("?$limit=10000000000")))
+response <- request |> req_perform() |> resp_body_string()
+cases_raw <- fromJSON(response)
+head(cases_raw)
+```
+
+## Wrangling Raw Data
+
+```{r}
+cases_raw = cases_raw %>% mutate(date = ymd_hms(end_date))
+cases_raw$tot_cases = as.numeric(cases_raw$tot_cases)
+cases_raw = cases_raw %>% select(state, date, cases = tot_cases) %>% mutate(Year = year(date))
+```
+
+```{r}
+head(cases_raw)
+```
+
+## Question 8: Merge With the Full Dataset
+
+```{r}
+population_complete %>% left_join(cases_raw, by = c("state", "Year"))
+```
+
