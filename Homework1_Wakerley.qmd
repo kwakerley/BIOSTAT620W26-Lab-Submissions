@@ -1,0 +1,223 @@
+---
+title: "Assignment 1 Wakerley"
+author: "Kyle Wakerley"
+format: html
+editor: visual
+embed-resources: true
+---
+
+## Question 1: EDA
+
+```{r load in data}
+# loading in data
+mi_2005 = read.csv("C:/Users/kylew/Downloads/MI_2005_PM25.csv")
+mi_2025 = read.csv("C:/Users/kylew/Downloads/MI_2025_PM25.csv")
+library(dplyr)
+```
+
+```{r check size}
+# Checking Dimensions for 2005
+dim(mi_2005)
+
+# Checking Dimensions for 2025
+dim(mi_2025)
+```
+
+```{r check variables and types}
+str(mi_2005) #same variables for 2025
+summary(mi_2005$Daily.Mean.PM2.5.Concentration)
+summary(mi_2025$Daily.Mean.PM2.5.Concentration)
+summary(mi_2025$Percent.Complete)
+summary(mi_2005$Percent.Complete)
+length(unique(mi_2025$Site.ID))
+length(unique(mi_2005$Site.ID))
+```
+
+```{r look at top and bottom}
+head(mi_2005) %>% select(Date, Daily.Mean.PM2.5.Concentration, Local.Site.Name, County) 
+#Selecting only certain rows to reduce viewing clutter. 
+
+tail(mi_2005) %>% select(Date, Daily.Mean.PM2.5.Concentration, Local.Site.Name, County)
+
+head(mi_2025) %>% select(Date, Daily.Mean.PM2.5.Concentration, Local.Site.Name, County)
+
+tail(mi_2025) %>% select(Date, Daily.Mean.PM2.5.Concentration, Local.Site.Name, County)
+```
+
+```{r visualization of key variables}
+par(mfrow = c(1,2))
+hist(mi_2005$Daily.Mean.PM2.5.Concentration, xlab = "Daily Mean PM2.5 Concentration (ug/m3)", ylab = "Frequency", main = "Histogram of Daily Mean \n PM2.5 Concentration in \n Michigan in 2005", col = "wheat")
+
+hist(mi_2025$Daily.Mean.PM2.5.Concentration, xlab = "Daily Mean PM2.5 Concentration (ug/m3)", ylab = "Frequency", main = "Histogram of Daily Mean \n PM2.5  Concentration in \n Michigan in 2025", col = "lightgoldenrod")
+```
+
+### Summary of EDA findings
+
+After loading in the data, a few things stand out. The dimensions of the two datasets are different; the 2005 dataset has 5280 rows and 22 columns compared to 9934 rows and 22 columns for the 2025 dataset. The 2005 Data comes from a total of 34 sites compared to just 27 in 2025. I also looked into the variables and what they describe. POC (int) describes the method of data collection and ranges from 1 to 5, with most observations being 1. The Daily.Mean.PM2.5.Concentration variable (num) describes exactly that: mean PM2.5 concentrations at a specific testing site on a particular day. Daily.AQI.Value (int) describes the Air Quality Index value in the location that day. Finally there is information data on where the site is located (County.FIPS.Code, Site.Latitude, Site.Longitude, Local.Site.Name, Site.ID). Percent.Complete is also an intriguing value but strictly irrelevant for this investigation as a quick dive reveals that it is 100 percent in each case. A summary of the main variable Daily.Mean.PM2.5.Concentration for the two years shows a few differences. Both years are skewed to the right, with the 2025 year being more concentrated towards zero compared to 2005. Michigan in 2005 had a Minimum pm2.5 value of 0, a Median of 11, a Mean of 13.77, and a max of 81.6. Comparatively, 2025 Michigan had a Minimum PM2.5 value of 0 (the same), a Median of 6.3 (lower), a Mean of 8.305 (lower), and a max of 116 (higher). This might suggest that on average the sites recorded lower PM2.5 values in 2025 compared to 2005, however some sites have much higher PM2.5 values.
+
+## Question 2
+
+```{r dataframe manipulation}
+micombined = rbind(mi_2005, mi_2025)
+
+micombined$date_converted = as.Date(micombined$Date, format = "%m/%d/%Y")
+micombined$Year = format(micombined$date_converted, "%Y")
+
+micombined_f = micombined %>% rename(
+  mean2.5 = Daily.Mean.PM2.5.Concentration,
+  AQI = Daily.AQI.Value,
+  site = Local.Site.Name,
+  lat = Site.Latitude,
+  id = Site.ID,
+  lon = Site.Longitude)
+
+head(micombined_f) %>% select(Date, id, mean2.5, site, lat, lon)
+#Selected only certain columns for readability. 
+```
+
+## Question 3
+
+```{r}
+library(ggplot2)
+#install.packages("maps")
+library(maps)
+us_map = map_data("state")
+mi_map = us_map %>% filter(region == "michigan")
+
+ggplot() + geom_polygon(data = mi_map, aes(x = long, y = lat, group = group), fill = "lightgrey", color = "white") + geom_point(
+    data = micombined_f,
+    aes(x = lon, y = lat, color = factor(Year)),
+    size = 2, alpha = 0.05, position = position_jitter(width = 0.05, height = 0.05)) + coord_fixed(1.3) + labs(color = "Year") + theme_minimal() +
+  ggtitle("Site Locations Across Michigan")
+
+sites_2005 = unique(mi_2005$Site.ID) 
+sites_2025 = unique(mi_2025$Site.ID)
+
+setdiff(sites_2025, sites_2005) #10 sites in 2025 not in 2005
+setdiff(sites_2005, sites_2025) #17 in 2005 but not 2025
+intersect(sites_2025, sites_2005) #17 in both
+
+```
+
+```{r}
+(unique(mi_2025$Local.Site.Name))
+(unique(mi_2005$Local.Site.Name))
+(unique(mi_2005$Site.ID))
+
+micombined_f %>% filter(site == "SOUTH OF SCHOOL") %>% distinct(id)
+
+# 4 blank sites with no name
+# NORTH OF EASTERDAY AVENUE moved slightly (2 sites)
+#SOUTH OF SCHOOL moved slightly (2 sites)
+```
+
+## Spatial Distribution of Sites in Michigan From 2005 to 2025
+
+Looking at how sites are distributed across Michigan in 2005 and 2025, there appears to be a spatial difference. 10 new sites have popped up in 2025 compared to 2005. 3 of these appear to be in the UP, some are scattered in West Michigan, a few in central Michigan, and the rest are concentrated near Detroit. 17 sites that were present in 2005 are no longer collecting data. 5 of these were in the UP, and one was near the Ohio border. Sites located near Detroit have moved slightly (perhaps to more favorable locations). There are 17 sites that are shared between both years. The sites named NORTH OF EASTERDAY AVENUE, and SOUTH OF SCHOOL moved slightly and thus have 2 site IDs and locations (Both from 2005). There are 4 sites with no site name, but a unique site ID. 
+
+## Question 4: Checking for implausible values of PM2.5
+
+```{r checking for outliers}
+summary(micombined_f$mean2.5)
+micombined_f %>% filter(mean2.5 > 100) %>% as_tibble()
+micombined_f %>% filter(site == "Negaunee Township, Off Pump House Road, Pump House #2", mean2.5 > 40 ) %>% select(Date, mean2.5, AQI)
+#Both days correspond to Canadian wild fire smoke. Likely real values.
+
+mean(is.na(micombined_f$mean2.5)) # Zero NA values
+```
+
+There are two values, both in 2025, that exceed 100 ug/m3 LC. Both of these occurred at the same site, "Negaunee Township, Off Pump House Road, Pump House #2" on June 3rd 2025 and July 30th 2025. Looking on Google for these dates shows that Canadian Wildfire smoke had greatly worsened the air quality (and thus PM2.5) in the Michigan Area. This site in particular was hit especially hard due to its location in the upper peninsula. Looking at the daily average PM2.5 values I found no missing values. Overall, there are no data points that require further examination or need to be removed.
+
+## Method Code Analysis
+
+```{r method code}
+
+ggplot(data = micombined_f) + geom_bar(aes(x = as.character(Method.Code), fill = Year), color = "black")+ theme_bw() + labs(x = "Method Code Number", y = "Frequency", title = "Barplot of Counts by Method Code")
+
+micombined_f %>% group_by(Year) %>% summarize(Prop_Missing = mean(is.na(Method.Code)))
+```
+
+The two most common methods used in our data are method code numbers 118 and 636. Looking at the EPA code table 118 corresponds to "R & P MODEL 2025 PM2.5 SEQUNTL" which is a Gravimetric recording strategy. Code 636 is referred to as "Teledyne T640 at 5.0 LPM w/Network Data Alignment enabled". This is a continuous Broadband Spectroscopy technique. Temporally, I found that 2005 sites did not ever leave the method code blank, as 0% of the Method.Code column is missing. However, in 2025, more than a quarter of all entries are missing the method code (25.6%). This is important because we cannot fully compare the distribution of method codes across the years with this amount of missing data. The missing data could belong to any of the method codes shown in the barplot, or perhaps a brand new one.
+
+## Question 5
+
+### Whole State Analysis
+
+```{r question 5}
+library(tidyr)
+# Spatial Analysis for Primary Research Question
+
+#Level One: Whole State
+mean(mi_2005$Daily.Mean.PM2.5.Concentration) - mean(mi_2025$Daily.Mean.PM2.5.Concentration)
+
+micombined_f %>%
+  group_by(Year) %>%
+  summarize(mean = mean(mean2.5, na.rm = TRUE), n = n(), sd = sd(mean2.5, na.rm = TRUE), se = sd / sqrt(n)) %>%
+ ggplot(aes(x = Year, y = mean)) +
+  geom_bar(stat = "identity", fill = "lightblue", color = "black") + 
+  labs(y = "Mean PM2.5 Level (ug/m3 LC) ", title = "Barplot Comparing Mean PM2.5 Levels across all counties in 2005 and 2025") + 
+  theme_bw() + 
+  geom_errorbar(aes(ymin = mean - se, ymax = mean + se), width = 0.2)
+
+```
+
+From a very simple whole-state level, we can see that average daily mean PM2.5 concentrations decreased 5.467 ug/m3 LC from 2005 to 2025. So from the perspective of the entire state, levels of PM2.5 have improved in the last 20 years.
+
+### County Analysis
+
+```{r level 2}
+#Level Two: By County
+# Creating difference in 2025 vs 2005 across all counties in Michigan  
+micombined_f %>% group_by(County, Year) %>%
+  summarize(mean2.5_county = mean(mean2.5, na.rm = TRUE), sd = sd(mean2.5, na.rm = TRUE), n = n(), se = sd / sqrt(n)) %>%
+  pivot_wider(names_from = Year, values_from = c(mean2.5_county, se, sd, n))  %>%
+   mutate(Mean_Diff = mean2.5_county_2025 - mean2.5_county_2005, SE_Diff = sqrt(se_2005^2 + se_2025^2)) %>%
+   ggplot(aes(x = reorder(County, Mean_Diff), y = Mean_Diff)) +
+    geom_col(fill = "lightblue") +
+    geom_errorbar(aes(ymin = Mean_Diff - SE_Diff, ymax = Mean_Diff + SE_Diff), width = 0.2) +
+    coord_flip() +
+    theme_bw() +
+    labs(x = "County", y = "PM2.5 Difference (2025 − 2005)", title = "Change in Mean PM2.5 by County in Michigan")
+
+
+#Combining data with latitude and longitude data for each county
+
+Air_improvement = micombined_f %>% group_by(County, Year) %>% summarize(mean2.5 = mean(mean2.5)) %>% pivot_wider(names_from = Year, values_from = mean2.5) %>% mutate(Mean_Diff = `2025`- `2005`, Improvement = -Mean_Diff)
+
+mi_counties = map_data("county", "michigan") %>% 
+  mutate(County = tools::toTitleCase(subregion)) #Used AI assistance to help correct case issues 
+
+mi_map_diff = mi_counties %>% 
+  left_join(Air_improvement, by = "County")
+
+#Plotting improvements on the Michigan map
+
+ggplot(mi_map_diff) +
+  geom_polygon(
+    aes(x = long, y = lat, group = group, fill = Improvement), color = "white", linewidth = 0.5) +
+  scale_fill_gradient2(low = "orange", mid = "lightgray", high = "blue",midpoint = 0,name = "PM2.5 Improvement\n(2005 to 2025)") +
+  coord_fixed(1.3) +
+  labs(title = "Change in Mean PM2.5 by County in Michigan",
+    subtitle = "Bluer Counties Have Larger Improvements; Red Have Worse Compared to 2005", x = "Longtitude", y = "Latitude") + theme_light()
+
+Air_improvement %>% filter(!is.na(Improvement))
+```
+
+For the 25 counties in Michigan that measured PM2.5 levels, 10 of them did not have data for both 2005 and 2025. However for the 15 counties with data collected in both years, the average daily PM2.5 level was improved in 14 of them. Only Schoolcraft County, located in the upper peninsula, showed worsening PM2.5 levels in 2025 compared to 2005. This could be due to increased industry in the area that has popped up since 2005, or due to random chance. Visually on the Michigan map, we see moderate improvements in Western Michigan along with greater improvements in the Detroit suburb area.
+
+### Wayne County Analysis
+
+```{r level 3}
+# Level Three: Sites in Wayne County
+
+Wayne_county = micombined_f %>% filter(County == "Wayne") %>% group_by(Year, site) %>% summarize(mean2.5 = mean(mean2.5)) %>% pivot_wider(names_from = Year, values_from = mean2.5) %>% mutate(Mean_Diff = `2025`- `2005`) %>% filter(!is.na(Mean_Diff))
+  
+ggplot(data = Wayne_county, aes(x = reorder(site, Mean_Diff), y = Mean_Diff)) + geom_col(fill = "lightblue") + coord_flip() + labs(x = "Site Name", y = "PM2.5 Difference (2025 − 2005)", title = "Change in Mean PM2.5 by Site \n in Wayne County in Michigan") + theme_bw()
+
+Wayne_county %>% rename(
+  Site = site,
+  `Mean Difference` = Mean_Diff
+)
+```
+
+There are 15 sites in Wayne county that collected data across the two years. Of these 15 sites, only 4 collected data in both 2005 and 2025. These sites are: Detroit-Southwest, Allen Park, East 7 Mile, and a property owned by Dearborn public schools. Although a small sample size, it is apparent that all 4 of these sites have had vast improvement in PM2.5 levels since 2005. All 4 of these sites have improvements over 7.5 ug/m3 LC, and the property owned by Dearborn public schools had close to a 10 ug/m3 LC improvement. From this we can hazard that the air quality has improved a lot in the Detroit area in the last 20 years.
