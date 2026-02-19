@@ -1,0 +1,135 @@
+---
+title: "Lab 6 Wakerley"
+author: "Kyle Wakerley"
+format: html
+editor: visual
+embed-resources: true
+---
+
+## Load In Data
+
+```{r load in}
+library(dplyr)
+library(ggplot2)
+#install.packages("tidytext")
+library(tidytext)
+
+mt = read.csv("C:/Users/kylew/Downloads/mtsamples.csv")
+```
+
+## Count Specialty
+
+```{r count}
+mt %>% count(medical_specialty) %>% arrange(desc(n))
+```
+
+There are 40 categories of "medical_specialty". Surgery is a very broad specialty and likely has links to most other specialties. Neurology and Neurosurgery are also related. Nephrology is also related to other endocrine functions such as Urology.
+
+## Question 2: Tokenizing
+
+```{r}
+mt_top_20 = mt %>% unnest_tokens(token, transcription) %>% count(token) %>% top_n(20,n) %>% arrange(desc(n))
+
+#install.packages("ggwordcloud")
+library(ggwordcloud)
+
+
+ggplot(mt_top_20, aes(label = token, size = n)) +
+  geom_text_wordcloud() +
+  scale_size_area(max_size = 40) +
+  theme_minimal()
+```
+We see most of the top 20 words are common stop words (and, the, was, of, with). Another expected results is that the word patient is in the top 20. Due to the number of stop words, we cannot gain much from this result.
+
+## Removing Stop Words
+
+```{r remove stop words}
+library(stringr)
+
+mt_nostop = mt %>% unnest_tokens(token, transcription) %>% anti_join(stop_words, by = c("token" = "word")) %>% filter(!str_detect(token, "[[:digit:]]")) 
+
+mt_nostop_c = mt_nostop %>% count(token) %>% top_n(20,n) %>% arrange(desc(n))
+ 
+
+ggplot(mt_nostop_c, aes(label = token, size = n, color = token)) +
+  geom_text_wordcloud() +
+  scale_size_area(max_size = 30) +
+  theme_minimal()
+```
+Now that we have removed stop words, we can see that patient is the top word (which makes sense because it appeared in the top 20 words even with stop words included). Now though, we can see that procedure, history, left, and pain are common words in these data. There are also words related to surgery such as anesthesia, performed, and incision. This tells us that a lot of people came to the doctor in pain, and underwent a procedure. 
+
+```{r bi grams}
+library(patchwork)
+
+mt_bigram = mt %>% unnest_ngrams(ngram, transcription, n = 2) %>% count(ngram) %>% top_n(20,n) %>% arrange(desc(n))
+mt_bigram %>% head()
+
+mt_trigram = mt %>% unnest_ngrams(ngram, transcription, n = 3) %>% count(ngram) %>% top_n(20,n) %>% arrange(desc(n))
+mt_trigram %>% head()
+
+bigram_plot = ggplot(mt_bigram, aes(label = ngram, size = n, color = ngram)) +
+  geom_text_wordcloud() +
+  scale_size_area(max_size = 15) +
+  theme_minimal()
+
+trigram_plot = ggplot(mt_trigram, aes(label = ngram, size = n, color = ngram)) +
+  geom_text_wordcloud() +
+  scale_size_area(max_size = 10) +
+  theme_minimal()
+
+combined_plot = bigram_plot / trigram_plot
+
+combined_plot
+
+```
+Looking at the bigrams first, we see common two word parings such as "of the", "to the", and "at the". The most common pairing was "the patient". This makes sense because we are working in the hospital setting. 
+
+For Trigrams, we see some interesting pairings. "Past Medical History" stands out to me, as neither of those words were present in any of our other word clouds. There are also lots of trigrams describing parts of surgery ("was placed in". "tolerated the procedure" etc).
+
+## Question 5, Looking at Words before and after patient
+
+```{r}
+library(stringr)
+mt %>% unnest_ngrams(ngram, transcription, n = 2) %>%
+  select(ngram) %>%
+  filter(str_detect(ngram, "\\bpatient\\b")) %>%
+  unnest_tokens(token, ngram) %>%
+  count(token) %>%
+  arrange(desc(n)) %>%
+  filter(token != "patient" & token != "patient's") %>% head()
+
+```
+
+Looking at words that come before and after patient, we see that words like "the", "was", "is", "has", "tolerated", and "had" showed up frequently. "The" had by far the most number of instances, at 22512 (these were probably all before the word patient). Tolerated is likely a common word because it describes how the patient did during and after the procedure or treatment. 
+
+## Common Words by Specialty
+
+```{r}
+mt_spec = mt_nostop %>% group_by(medical_specialty) %>% count(token) %>% top_n(5, n) %>% mutate(rank = rank(token)) 
+
+   ggplot(data = mt_spec, aes(label = token, size = rank, color = token)) +
+   geom_text_wordcloud() +
+   scale_size_area(max_size = 2.3) +
+   theme_minimal() + facet_wrap(~medical_specialty)
+
+
+```
+Looking at each specialty, we see words that one would associate with the area. For example, Allergy has "nasal" and "allergies", along with "past" and "history". A lot of their work likely revolves around asking about previous allergy history. Neurosurgery includes the word cervical, which also checks out, since spinal work is closely related to brain and neural function. 
+
+## Question 7: Specialized Words
+
+Which words are found in a specific specialty, but not found in any other specialty?
+
+```{r specialized words}
+mt_spec_15 = mt_nostop %>% group_by(medical_specialty) %>% count(token) %>% top_n(15, n)
+
+unique_tokens = mt_spec_15 %>%
+  ungroup() %>%
+  distinct(token, .keep_all = TRUE) %>% count(medical_specialty, sort = T)
+
+unique_tokens %>% head()
+unique_tokens %>% tail()
+```
+
+Looking at the top 15 most common words in each specialty (excluding stop words and numbers), we see that Allergy/Immunology and Autopsy are the most specialized. These specialties use words that are very distinct from other specialties. On the flip side, Hematology and General Medicine use words most similar to other specialties. 
+
