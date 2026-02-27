@@ -1,0 +1,128 @@
+---
+title: "Lab_7_Wakerley"
+author: "Kyle Wakerley"
+format: html
+editor: visual
+---
+
+```{r}
+library(httr)
+library(xml2)
+library(stringr)
+```
+
+```{r}
+website <- xml2::read_html("https://pubmed.ncbi.nlm.nih.gov/?term=sars-cov-2")
+
+# Finding the counts
+counts <- xml2::xml_find_all(website, xpath = "//div[@class='results-amount']")
+
+# Turning it into text
+counts <- as.character(counts)
+
+# Extracting the data using regex
+totalcount <- stringr::str_extract(counts[2], "\\d{1,3}(?:,\\d{3})*")
+#totalcount
+
+# Removing any commas/dots so that we can convert to numeric
+totalcount <- gsub(',', '', totalcount)
+
+totalcount <- as.numeric(totalcount)
+print(totalcount)
+
+```
+
+```{r}
+# read in text, each line is a separate character
+abstracts <- readLines('C:/Users/kylew/Downloads/abstract-sars-cov-2-set (1).txt', warn = FALSE)
+
+# combine all text into one character
+abstracts <- paste(abstracts, collapse = "\n")
+
+
+# split the text whenever 3 new lines occur in a row (indicating two blank lines)
+abstracts <- strsplit(abstracts, split = "\n\n\n")
+#print(abstracts)
+
+# replace any remaining "\n" symbols with spaces
+abstracts <- unlist(abstracts) #had to add this line to get my gsub to work
+abstracts <- gsub("\n", " ", abstracts)
+
+
+# replace multiple spaces with single space
+abstracts <- gsub(" +", " ", abstracts)
+print(abstracts[1])
+```
+
+```{r universities}
+library(stringr)
+library(dplyr)
+institution <- str_extract_all(
+  abstracts,
+  "\\b[[:alnum:]-_]+\\s+University\\b|\\b[[:alnum:]-_]+\\s+State\\s+University\\b|\\bUniversity of\\s+[[:alnum:][:space:]-_]+\\b|\\b[[:alnum:]-_]+\\s+Institute of\\s+[[:alnum:][:space:]-_]+\\b")
+
+#Finds the listed Schools. For The University of _ it repeats until the pattern breaks
+institution <- unlist(institution)
+x = table(institution)
+
+as.data.frame(x) %>% arrange(desc(Freq)) %>% top_n(10, Freq)
+```
+
+## Question 4
+
+```{r}
+# read in text, each line is a separate character
+abstracts <- readLines('C:/Users/kylew/Downloads/abstract-sars-cov-2-set (1).txt', warn = FALSE)
+
+# combine all text into one character
+abstracts <- paste(abstracts, collapse = "\n")
+
+
+# split the text whenever 3 new lines occur in a row (indicating two blank lines)
+abstracts <- strsplit(abstracts, split = "\n\n\n")
+
+abstracts = unlist(abstracts)
+
+journal <- str_extract(abstracts, "(?<=\\d{1,3}\\.\\s).*?(?=\\.\\s\\d{4})")
+journal = as.data.frame(journal)
+head(journal)
+
+titles <- sapply(abstracts, function(x){
+  unlist(strsplit(x, split = "\n\n"))[2]
+}, USE.NAMES = FALSE)
+
+Titles = as.data.frame(titles)
+```
+
+```{r extract authors}
+authors <- sapply(abstracts, function(x){
+  unlist(strsplit(x, split = "\n\n"))[3]
+}, USE.NAMES = FALSE)
+
+authors = data.frame(authors)
+head(authors)
+```
+
+```{r}
+#always starts with a blank line followed by “Author information:” and ends with another blank line.
+affiliations <- str_extract(abstracts, "(?s)\\nAuthor information:\\s*(.*?)\\n\\s*\\n")
+```
+
+```{r}
+affiliations<- gsub("\n", " ", affiliations)
+
+affiliations <- gsub(" +", " ", affiliations)
+
+affiliations = as.data.frame(affiliations)
+
+papers <- cbind(Titles, journal, authors, affiliations) %>%
+  mutate(
+    affiliation = str_sub(affiliations, start = 21, end = -1),
+    affiliations = str_trunc(affiliation, width = 100),
+    authors = str_trunc(authors, width = 100)) %>%
+  select(titles, journal, authors, affiliations)
+
+#Table looks slightly wonky because of the character limit.
+knitr::kable(papers[1:5, 1:4])
+
+```
