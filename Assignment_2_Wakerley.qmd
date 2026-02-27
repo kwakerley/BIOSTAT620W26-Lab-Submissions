@@ -1,0 +1,388 @@
+---
+title: "Assignment 2"
+author: "Kyle Wakerley"
+format: html
+editor: visual
+embed-resources: true
+---
+
+# Assignment 2
+
+```{r reading in data}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+
+#Reading in Data
+chs_i = read.csv("C:/Users/kylew/Downloads/chs_individual.csv")
+chs_r = read.csv("C:/Users/kylew/Downloads/chs_regional.csv")
+```
+
+## Question 1: Merge
+
+```{r merge}
+chs = merge(chs_i, chs_r, by = intersect(names(chs_i), names(chs_r)))
+dim(chs)
+```
+
+After merging, we still have the same number of rows.
+
+### Imputation
+
+```{r imputation}
+#install.packages("DescTools")
+library(DescTools)
+library(dplyr)
+
+# Change Binary Variables to Categorical
+
+chs = chs %>% mutate(
+  asthma = as.character(asthma),
+  father_asthma = as.character(father_asthma),
+  mother_asthma = as.character(mother_asthma),
+  wheeze = as.character(wheeze),
+  hayfever = as.character(hayfever),
+  allergy = as.character(allergy),
+  educ_parent = as.character(educ_parent),
+  smoke = as.character(smoke),
+  pets = as.character(pets),
+  gasstove = as.character(gasstove)
+)
+
+#Changing Mode Function to deal with NA values
+
+safe_mode = function(x) {
+  m <- Mode(x, na.rm = TRUE)
+  if (length(m) == 0) return(NA_character_)
+  as.character(m[1])
+}
+
+#4 Combinations of Male/Hispanic
+
+mh = chs %>% filter(male == 1 & hispanic == 1)
+fh = chs %>% filter(male == 0 & hispanic == 1)
+mn = chs %>% filter(male == 1 & hispanic == 0)
+fn = chs %>% filter(male == 0 & hispanic == 0)
+
+# For Males who are Hispanic
+
+mh_imputed = mh %>%
+  mutate(
+    across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)), 
+         across(where(is.character), ~ replace(., is.na(.), safe_mode(.))))
+
+# For females who are Hispanic
+
+fh_imputed = fh %>%
+  mutate(
+    across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)), 
+         across(where(is.character), ~ replace(., is.na(.), safe_mode(.))))
+
+# For males who are not Hispanic
+
+mn_imputed = mn %>%
+  mutate(
+    across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)), 
+         across(where(is.character), ~ replace(., is.na(.), safe_mode(.))))
+
+#For females who are not Hispanic
+
+fn_imputed = fn %>%
+  mutate(
+    across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)), 
+         across(where(is.character), ~ replace(., is.na(.), safe_mode(.))))
+
+chs_imputed = rbind(mh_imputed, fh_imputed, mn_imputed, fn_imputed)
+
+head(chs_imputed) #Snapshot of the Data
+```
+
+To impute the data, I split the data into 4 groups by the binary variables "male" and "Hispanic". I then replaced NA values in numerical columns to the group mean and the NA values in categorical columns to the group mode. I then combined these 4 subsets to combine the results.
+
+## Question 2: Obesity Level
+
+```{r obesity level}
+
+chs_imputed = chs_imputed %>%
+  mutate(obesity_level = case_when(
+    bmi < 14 ~ "underweight",
+    bmi >= 14 & bmi < 22 ~ "normal",
+    bmi >= 22 & bmi <= 24 ~ "overweight",
+    bmi > 24 ~ "obese"
+  ))
+
+chs_imputed$obesity_level = factor(chs_imputed$obesity_level,
+                                   levels = c("underweight",
+                                              "normal",
+                                              "overweight",
+                                              "obese"))
+
+chs_imputed %>%
+  group_by(obesity_level) %>%
+  summarize(number = n(), min_bmi = min(bmi), max_bmi = max(bmi))
+
+```
+
+```{r}
+chs_imputed %>% filter(bmi < 12.5)
+```
+
+We can see a large number of subjects fall into the "normal" range. Only 35 people fell into the underweight category (with a minimum BMI of 11.296). Only 3 of the 35 individuals are below a Bmi of 12.5.
+
+## Question 3: Smoke Exposure
+
+```{r smoke exposure}
+chs_imputed = chs_imputed %>%
+  mutate(smoke_gas_exposure = case_when(
+    gasstove == "1" & smoke == "1" ~ "Both Types of Exposure",
+    gasstove == "1" & smoke == "0" ~ "Gas Stove Exposure",
+    gasstove == "0" & smoke == "1" ~ "Second Hand Smoke Exposure",
+    gasstove == "0" & smoke == "0" ~ "No Exposure"
+  ))
+ chs_imputed %>% select(sid, smoke_gas_exposure) %>% head()
+```
+
+Using the case_when() function, I split "smoke_gas_exposure" into 4 distinct groups.
+
+## Question 4
+
+```{r fev }
+variables = c("townname", "male", "obesity_level", "smoke_gas_exposure")
+
+for (names in variables) {
+  print(chs_imputed %>% 
+  group_by(across(all_of(names))) %>%
+  summarize(Mean = mean(fev), Sd = sd(fev), .groups = "drop"))
+}
+  
+
+```
+
+Each town had a mean FEV of between about 1985 and 2087, with a standard deviation of around 300. Females had a lower average FEV reading (about 200ml less) compared to males, with a similar standard deviation. We see a positive trend with obesity level and FEV output; Children with higher BMIs had a higher FEV on average. Finally, it does not appear that smoke or gas exposure has much of an impact; All 4 groups had an average FEV of around 2025 with a standard deviation of around 315.
+
+## EDA Checklist
+
+```{r size of data}
+dim(chs_imputed)
+```
+
+```{r structure of key variables}
+chs_imputed_key = chs_imputed %>%
+  select(bmi, male, hispanic, asthma, smoke, gasstove, fev, obesity_level, starts_with("pm25")) 
+
+chs_imputed_key %>% str()
+
+```
+
+```{r top and bottom}
+head(chs_imputed_key)
+tail(chs_imputed_key)
+```
+
+```{r distributions of key variables}
+library(cowplot)
+#install.packages("patchwork")
+library(patchwork)
+
+theme_set(theme_minimal())
+
+plot1 = chs_imputed %>% ggplot(aes(x = as.factor(male), fill = as.factor(male))) + 
+  geom_bar(color = "black") +
+  scale_fill_manual(
+    values = c("0" = "pink", "1" = "blue")) +
+  labs(x = "Sex", y = "Count") +
+  theme(legend.position = "none")
+
+
+plot2 = chs_imputed %>% ggplot(aes(x = bmi)) +
+  geom_histogram(fill = "lightblue", color = "black") +
+  labs(x = "BMI", y = "Count")
+
+
+plot3 = chs_imputed %>%
+  ggplot(aes(x = as.factor(hispanic), fill = as.factor(hispanic))) +
+  geom_bar(color = "black") +
+  scale_fill_manual(values = c("0" = "darkblue", "1" = "orange")) +
+  labs(x = "Hispanic? \n No -> Yes", y = "Count") +
+  theme(legend.position = "none")
+
+
+plot4 = chs_imputed %>%
+  ggplot(aes(x = pm25_mass)) +
+  geom_histogram(fill = "orchid3", color = "black") +
+  labs(x = "PM2.5 Mass", y = "Count")
+
+plot5 = chs_imputed %>%
+  ggplot(aes(x = smoke, , fill = smoke)) +
+  geom_bar(color = "black") +
+  scale_fill_manual(values = c("0" = "sienna2", "1" = "deeppink4")) +
+  labs(x = "Second Hand Smoke Exposure \n No -> Yes", y = "Count") +
+  theme(legend.position = "none")
+
+plot6 = chs_imputed %>%
+  ggplot(aes(x = fev)) +
+  geom_histogram(fill = "lightgreen", color = "black") +
+  labs(x = "Fev (ml)", y = "Count")
+
+combined_plot = (plot1 + plot2 + plot3) /
+                 (plot5 + plot4 + plot6) +
+  plot_annotation(
+    title = "EDA of Key Variables",
+    theme = theme(
+      plot.title = element_text(size = 15, face = "bold", hjust = 0.5)))
+
+combined_plot
+```
+
+```{r}
+m1 = lm(data = chs_imputed, fev ~ smoke_gas_exposure)
+summary(m1)
+
+m2 = lm(data = chs_imputed, fev ~ pm25_mass)
+summary(m2)
+
+m3 = lm(data = chs_imputed, fev ~ bmi)
+summary(m3)
+```
+
+Our chs_imputed data table has 1200 rows and 51 columns. Of the columns, the ones I chose to focus on were Sex (Binary), Hispanic (Binary), PM2.5_Mass (Numeric), Smoke_gas_exposure (factor), BMI (both numeric and factor), and FEV (numeric). I also took a brief look at the many PM2.5 readings that were collected in this study. FEV is roughly normally distributed with a mean around 2000, making it a good response variable for linear regression. BMI is slightly skewed right, which is typical. There were roughly the same amount of males and females in the study, but less Hispanics than non Hispanics. About 1/6th of children were exposed to second hand smoke of some kind. Finally, the graph for PM2.5 is rather boring - each town got a reading, but there are only a limited number of towns. Using linear models Y\~fev and Y\~smoke_gas_exposure we see no correlation (p = 0.5246) between smoke and gas exposure and fev reading, but see a significant negative relationship between pm25_mass and fev (p = 0.01096). Finally we see BMI is highly correlated with fev reading (p = 2.2e-16) and is statistically significant. From these linear models I would initially look further into pm2.5 mass and fev, as well as BMI, as there appears to be a relationship.
+
+## Visualization
+
+```{r faceted scatterplot}
+chs_imputed %>% ggplot(aes(x = bmi, y = fev)) +
+  geom_point(size = 1.5) +
+  facet_wrap(~townname) +
+  geom_smooth(se = F, linewidth = 0.8, color = "lightseagreen") +
+  labs(x ="BMI", y = "Fev Reading (ml/min)") + plot_annotation(title = "Relationship Between BMI and FEV values by Town") + theme_minimal_grid()
+```
+
+There appears to be a positive correlation between BMI and Fev readings across most towns. The higher BMI the children had, the higher Fev reading they tended to have. Some of these regression lines are hindered by outliers in the data. Lompoc for instance would have a very high correlation if not for the subject with a BMI over 30. Overall these graphs support out hypothesis that BMI increases Fev test readings in the children.
+
+```{r stacked histogram}
+library(wesanderson) #Using fun color palette 
+
+ggplot(data = chs_imputed) + geom_histogram(aes(x = fev, fill = obesity_level), color = "black") +
+  theme_bw() +
+  labs(x = "FEV (ml/1 min)",
+       y = "Count",
+       title = "Histogram of FEV distribution by BMI category",
+       fill = "Obesity Level",
+       subtitle = "Blue line indicates the mean FEV reading") + 
+  scale_fill_manual(values = wes_palette(n = 4, name = "GrandBudapest2")) + 
+  geom_vline(aes(xintercept = mean(fev, na.rm = TRUE)),
+             color = "blue",
+             linewidth = 1.2,
+             linetype = "dashed")
+
+ggplot(data = chs_imputed) + geom_histogram(aes(x = fev, fill = smoke_gas_exposure), color = "black") +
+  theme_bw() +
+  labs(x = "FEV (ml/1 min)",
+       y = "Count",
+       title = "Histogram of FEV distribution by Smoke and Gas Exposure",
+       fill = "Smoke and Gas Exposure",
+       subtitle = "Blue line indicates the mean FEV reading") + 
+  scale_fill_manual(values = wes_palette(n = 4, name = "GrandBudapest1")) + 
+  geom_vline(aes(xintercept = mean(fev, na.rm = TRUE)), color = "blue", linewidth = 1.2, linetype = "dashed")
+```
+
+What we see in these histograms confirms what we hypothesized and saw in previous exercises. Smoke and gas exposure does not appear to impact FEV readings. There appear to be similar proportions of each group in what we would expect to see in a normal distribution (that is, \~65% of the data for each category falls 1 standard deviation away from the mean and so on). No group is unequally distributed left or right. We do not see the same for BMI and FEV. More of the children in the overweight and obese category have higher FEV readings, their portion of the bar graph is shifted to the right. Conversely we see that those in the underweight category were more concentrated near the left tail of the FEV distribution.
+
+```{r bmi by smoke exposure}
+chs_imputed$smoke_gas_exposure = factor(chs_imputed$smoke_gas_exposure, levels = c("No Exposure", "Gas Stove Exposure", "Second Hand Smoke Exposure", "Both Types of Exposure"))
+
+ggplot(data = chs_imputed, aes(x = obesity_level, fill = smoke_gas_exposure)) +
+  geom_bar(position = "fill") + 
+  theme_bw() +
+  labs(x = "Obesity Level",
+       y = "Proportion",
+       title = "Barplot of BMI by Smoke/Gas Exposure",
+       fill = "Smoke/Gas Exposure"
+       ) + 
+  scale_fill_manual(values = wes_palette(n = 4, name = "Darjeeling2"))
+```
+
+There are a few key takeaways from the bar chart displaying the distribution of obesity level and smoke and gas exposure. More individuals who are classified as obese have been exposed to second hand smoke exposure. We also see a slight uptick in the proportion of individuals who were exposed to both a gas stove and second hand smoke as we go up in obesity level. Finally we see no noticeable trend between no smoke exposure and obesity level as well as just gas exposure.
+
+```{r}
+ggplot(chs_imputed, aes(x=obesity_level, y=fev, fill=obesity_level)) +
+  geom_boxplot() +
+  theme_minimal() +
+  scale_fill_brewer(palette="Set2") +
+  labs(x = "Obesity Level",
+       y = "FEV Reading (ml/1min)",
+       title = "Boxplot of FEV by Obesity Level",
+       fill = "Obesity Level"
+       )
+
+ggplot(chs_imputed, aes(x=smoke_gas_exposure, y=fev, fill=smoke_gas_exposure)) +
+  geom_violin() +
+  theme_minimal() +
+  scale_fill_brewer(palette="Accent") +
+  labs(x = "Smoke/Gas Exposure",
+       y = "FEV Reading (ml/1min)",
+       title = "Violin Plot of FEV by Smoke/Gas Exposure Level",
+       fill = "Smoke/Gas Exposure"
+       ) +
+  coord_flip()
+```
+
+From the box plot, we see the same trend: Higher BMI individuals had higher FEV ratings. Each category has a few outliers, with the normal weight group having the most (however, this group has the most observations so this is not very concerning). The violin plots of FEV reading and smoke and gas exposure does not show much; all groups have a mean of around 2000ml/min and some slight tailing. The "Both of Types of Exposure" group had the most concentrated distribution compared to the other groups.
+
+```{r leaflet time}
+library(leaflet)
+
+palette = colorNumeric(
+  palette = "viridis",
+  domain = chs_imputed$pm25_mass
+)
+
+leaflet(data = chs_imputed) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    ~lon, ~lat,
+    radius = ~pm25_mass,           
+    stroke = FALSE,
+    fillColor = ~palette(pm25_mass),
+    fillOpacity = 0.7,
+    label = ~paste0(townname, ": ", pm25_mass, " µg/m^3")
+  ) %>%
+  addLegend(
+    "bottomright",
+    values = ~pm25_mass,
+    pal = palette,
+    title = "PM2.5 (µg/m^3)"
+  )
+```
+
+Exploring the relationship between town and PM2.5 mass spatially, we see that towns closer to Los Angeles and its bigger subsidiaries had a high PM2.5 on average. Mira Loma had the highest PM2.5 reading at 29.97, while Lompoc had the least (5.96)
+
+```{r pm2.5 vs fev}
+#install.packages("ggiraph")
+library(ggiraph)
+
+
+gg_point = ggplot(data = chs_imputed, aes(x = pm25_mass, y = fev)) +
+    geom_point_interactive(aes(tooltip = paste0(
+        "Town: ", townname,
+        "<br>PM2.5: ", pm25_mass,
+        "<br>FEV: ", fev),
+        data_id = townname,
+        color = townname)) +
+  geom_smooth( color = "black") +
+  theme_minimal() + 
+  labs(x = "PM2.5 Mass",
+       y = "FEV Reading (ml/1min)",
+       title = "Interactive Scatterplot of PM2.5 mass and FEV",
+       color = "Town Name"
+       )
+
+girafe(ggobj = gg_point)
+```
+
+I chose a scatter plot to examine the relationship between PM2.5 mass and FEW reading. We see a slight (emphasis on slight) but noticeable downward trend. That is to say, towns with higher PM2.5 mass values scored lower on FEV readings on average. This trend is consistent across towns, but each town only has 1 PM2.5 mass reading, which makes this scatter plot look somewhat uninteresting.
+
+## Conclusions
+
+We observed a positive significant relationship between BMI and FEV visually and through statistical modeling. We did not observe any relationship between smoke and gas exposure and fev, although we did see some connection between it and BMI which could be interesting to explore further. Finally we saw a significant negative association between PM2.5 mass and FEW output, which was seen visually (rather ingloriously).
