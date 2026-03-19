@@ -1,0 +1,210 @@
+---
+title: "Lab_9_Wakerley"
+author: "Kyle Wakerley"
+format: html
+editor: visual
+embed-resources: true
+---
+
+## Lab 9
+
+```{r, warning=FALSE}
+
+# install.packages(c("RSQLite", "DBI"))
+
+library(RSQLite)
+library(DBI)
+
+# Initialize a temporary in memory database
+con <- dbConnect(SQLite(), ":memory:")
+
+# Download tables
+doctor <- read.csv("https://raw.githubusercontent.com/dmcable/BIOSTAT620W26/main/data/hospital/doctor.csv")
+visit <- read.csv("https://raw.githubusercontent.com/dmcable/BIOSTAT620W26/main/data/hospital/visit.csv")
+patient <- read.csv("https://raw.githubusercontent.com/dmcable/BIOSTAT620W26/main/data/hospital/patient.csv")
+payment <- read.csv("https://raw.githubusercontent.com/dmcable/BIOSTAT620W26/main/data/hospital/payment.csv")
+
+# Copy data.frames to database
+dbWriteTable(con, "doctor", doctor)
+dbWriteTable(con, "visit", visit)
+dbWriteTable(con, "patient", patient)
+dbWriteTable(con, "payment", payment)
+```
+
+```{r}
+dbListTables(con)
+```
+
+## Exercise 1
+
+```{sql connection=con}
+SELECT doctor_id, first_name, last_name
+FROM doctor
+ORDER by last_name, first_name
+```
+
+The above code chunk retrieves the doctor ID, first name and last name for all doctors using the doctor table.
+
+## Exercise 2
+
+```{sql connection = con}
+SELECT doctor_id, first_name, last_name
+FROM doctor
+WHERE last_name IN ('WILLIAMS', 'DAVIS')
+```
+
+There are 6 doctors with a last name of "Davis" or "Williams"
+
+## Exercise 3
+
+```{sql connection = con}
+SELECT DISTINCT patient_id
+FROM visit
+WHERE date(visit_start_date) = '2005-07-05'
+```
+
+There are 27 patients who started a hospital visit on July 5th 2005.
+
+### Exercise 4.1
+
+```{sql connection = con}
+SELECT *
+FROM payment
+WHERE amount IN (199, 799, 999)
+```
+
+The query resulted in 111 matched for payment amounts of exactly 199, 799, and 999.
+
+### Exercise 4.2
+
+```{sql connection = con}
+SELECT *
+FROM payment
+WHERE amount > 500
+```
+
+There are 266 rows where the payment amount was greater than 500
+
+### Exercise 4.3
+
+```{sql connection = con}
+SELECT *
+FROM payment
+WHERE amount > 500 AND amount < 800
+```
+
+There are 204 instances of payments greater than 500 and less than 800
+
+## Exercise 5
+
+```{sql connection = con}
+SELECT payment_id, amount
+FROM payment
+  INNER JOIN patient ON payment.patient_id = patient.patient_id
+WHERE last_name = "DAVIS"
+```
+
+This returned 3 payments where the last name was "Davis"
+
+## Exercise 6
+
+### Exercise 6.1
+
+```{sql connection=con}
+SELECT COUNT(*)
+FROM visit
+```
+
+There are 16044 visits
+
+### Exercise 6.2
+
+```{sql connection = con}
+SELECT COUNT(*), patient_id
+FROM visit
+GROUP BY patient_id
+```
+
+Above are the counts for each patient
+
+### Exercise 6.3
+
+```{sql connection = con}
+SELECT COUNT(*), patient_id
+FROM visit
+GROUP BY patient_id
+ORDER BY COUNT(*) DESC
+```
+
+Now we ordered it in decending order.
+
+### Exercise 6.4
+
+```{sql connection = con}
+SELECT COUNT(*), patient_id
+FROM visit
+GROUP BY patient_id
+HAVING COUNT(*) > 40
+ORDER BY COUNT(*) DESC
+```
+Filtered by observations above 40
+
+## Exercise 7
+
+```{sql connection = con}
+SELECT MAX(amount), MIN(amount), AVG(amount), SUM(amount)
+FROM payment
+```
+Calculated summary stats. 
+
+### Exercise 7.1
+
+```{sql connection = con}
+SELECT  patient_id, MAX(amount), MIN(amount), AVG(amount), SUM(amount)
+FROM payment
+GROUP BY patient_id
+```
+
+Grouped by patient!
+
+### Exercise 7.2
+
+```{sql connection = con}
+SELECT  patient_id, MAX(amount), MIN(amount), AVG(amount), SUM(amount)
+FROM payment
+GROUP BY patient_id
+HAVING COUNT(*) > 5
+```
+
+Only calculated summary stats for patients who had more than 5 observations.
+
+### Exercise 8.1
+
+```{sql connection = con}
+SELECT AVG(julianday(visit_end_date) - julianday(visit_start_date)), doctor.doctor_id
+FROM visit
+JOIN doctor ON visit.doctor_id = doctor.doctor_id
+GROUP BY doctor.doctor_id
+```
+
+
+### Exercise 8.2
+
+```{sql connection = con}
+SELECT CONCAT(doctor.first_name, " " , doctor.last_name, " " ,  "Had an Average Visit Time of" , " ", AVG(julianday(visit_end_date) - julianday(visit_start_date)))
+FROM visit
+JOIN doctor ON visit.doctor_id = doctor.doctor_id
+GROUP BY doctor.doctor_id
+ORDER BY AVG(julianday(visit_end_date) - julianday(visit_start_date)) DESC LIMIT 5;
+```
+```{sql connection = con}
+SELECT CONCAT(doctor.first_name, " " , doctor.last_name, " " ,  "Had an Average Visit Time of" , " ", AVG(julianday(visit_end_date) - julianday(visit_start_date)))
+FROM visit
+JOIN doctor ON visit.doctor_id = doctor.doctor_id
+GROUP BY doctor.doctor_id
+ORDER BY AVG(julianday(visit_end_date) - julianday(visit_start_date)) ASC LIMIT 5;
+```
+```{r}
+dbDisconnect(con)
+```
+
