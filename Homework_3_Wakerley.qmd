@@ -1,0 +1,141 @@
+---
+title: "Homework 3"
+author: "Kyle Wakerley"
+format: html
+editor: visual
+embed-resources: true
+---
+
+## Homework 3
+
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidytext)
+library(stringr)
+library(ggwordcloud)
+library(knitr)
+```
+
+## Text Mining
+
+```{r}
+pubmed = read.csv("C:/Users/kylew/Downloads/pubmed.csv")
+```
+
+#### Question 1
+
+```{r}
+pubmed %>% group_by(term) %>% count() %>% kable()
+```
+
+There are 981 abstracts for covid, 376 for cystic fibrosis, 317 for menengitis, 780 for preeclampsia, and 787 for prostate cancer.
+
+```{r}
+pubmed_token = pubmed %>% unnest_tokens(token, abstract) %>% group_by(term) %>% count(token) 
+
+pubmed_token %>% top_n(5, n) %>% kable()
+```
+
+The top 5 Most common words for
+
+Covid: 19, and, covid, of, and the. Cystic Fibrosis: and, in, of, the, to Meningitis: a, and, in, of, the Preeclampsia: and, in, of, the, to Prostate Cancer: and, cancer, of, prostate, the
+
+They are pretty much all stop words.
+
+#### Question 2
+
+```{r}
+pubmed_token_nostop = pubmed_token %>%
+  anti_join(stop_words, by = c("token" = "word")) %>%
+  top_n(5, n)
+
+ggplot(pubmed_token_nostop, aes(label = token, size = n, color = token)) +
+  geom_text_wordcloud() +
+  scale_size_area(max_size = 20) +
+  theme_minimal()
+
+kable(pubmed_token_nostop)
+```
+
+After removing stop words we see better results. The names of the diseases, the word "patients" and other intriguing phrases like cf and csf are some of the top words in each category. The table above summarizes the top 5 words for each category.
+
+#### Question 3: Bigrams
+
+```{r}
+pub_bigram = pubmed %>%
+  unnest_ngrams(ngram, abstract, n = 2) %>%
+  count(ngram) %>%
+  top_n(10,n) %>%
+  arrange(desc(n))
+
+
+ggplot(pub_bigram, aes(label = ngram, size = n, color = ngram)) +
+  geom_text_wordcloud() +
+  scale_size_area(max_size = 20) +
+  theme_minimal()
+```
+
+We see that "Covid 19" is the top bigram in all of the abstracts. Common connecting phrases such as "of the" and "in the" unsurprisingly make the list. Other common bigrams relate to the search term such as "of prostate" and "pre eclampsia"
+
+#### Question 4: TD_IDF
+
+Below I calculated the td_idf for each token for each search term.
+
+```{r}
+pubmed_token %>%
+  bind_tf_idf(token, term, n) %>%
+  top_n(5, tf_idf) %>%
+  kable()
+```
+
+TF_IDF analysis helps isolate words that appear significantly more often in one searched term versus other search terms. In practice, this removes top words in question 1 like patient or patients, as well as disease, since those are general teams. tf-idf instead favors terms like fibrosis, covid, maternal, and prostate.
+
+## Sentiment Analysis
+
+#### Question 5
+
+```{r, warning=FALSE}
+#install.packages("textdata")
+pubmed_token_2 = pubmed %>% unnest_tokens(token, abstract)
+
+library(textdata)
+pubmed_token_2 %>%
+  inner_join(get_sentiments("nrc"), by = c("token" = "word")) %>%
+  group_by(term) %>%
+  count(sentiment) %>%
+  top_n(1,n) %>%
+  kable()
+
+pubmed_token_2 %>%
+  inner_join(get_sentiments("nrc"), by = c("token" = "word")) %>%
+  filter(sentiment != "positive" & sentiment != "negative") %>%
+  group_by(term) %>%
+  count(sentiment) %>%
+  top_n(1,n) %>%
+  kable()
+
+```
+
+Positive and negative were the most common sentiment for all 5 search terms before filtering. After removing positive and negative sentiments fear was the most common for covid, disgust for cystic fibrosis, fear for meningitis, anticipation for preeclampsia, and fear for prostate cancer.
+
+#### Question 6
+
+```{r, warning=FALSE}
+library("wesanderson")
+
+pubmed_affin = pubmed %>% mutate(rownum = row_number()) %>% unnest_tokens(token, abstract) %>% group_by(term, rownum) %>%
+  inner_join(get_sentiments("afinn"), by = c("token" = "word")) %>%
+  summarize(mean_score = mean(value))
+
+pubmed_affin %>%
+  ggplot() +
+  geom_boxplot(aes(x = term, y= mean_score, fill = term)) +
+  scale_fill_manual(values = wes_palette("Royal2")) +
+  labs(x= "Search Term",
+       y = "Mean Afinn Score",
+       title = "Mean Affin Score by Search Term",
+       fill = "Term")
+```
+
+We see that the scores for all of the 5 search terms tended towards being negative except for 1: cystic fibrosis. Perhaps the verbage used for abstracts about cystic fibrosis is slightly more positve compared to abstracts in other search terms. Prostate cancer had a much tighter range compared to the other 4 search terms.
