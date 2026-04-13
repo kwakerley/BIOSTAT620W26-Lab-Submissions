@@ -1,0 +1,325 @@
+---
+title: "Homework 4"
+author: "Kyle Wakerley"
+format: html
+editor: visual
+embed-resources: true
+---
+
+```{r warning=FALSE, message=FALSE}
+library(RSQLite)
+library(DBI)
+library(microbenchmark)
+library(ggplot2)
+library(knitr)
+library(dplyr)
+con <- dbConnect(SQLite(), ":memory:")
+```
+
+## HPC
+
+### Question 1
+
+```{r}
+# running cumulative sum by row
+fun2 <- function(mat) {
+  n <- nrow(mat)
+  k <- ncol(mat)
+  ans <- mat
+  for (i in 1:n) {
+    for (j in 2:k) {
+      ans[i,j] <- mat[i, j] + ans[i, j - 1]
+    }
+  }
+  ans
+}
+
+fun2alt <- function(mat) {
+  t(apply(mat, 1, cumsum))
+}
+```
+
+```{r}
+# Use the functions with this data
+set.seed(2315)
+dat <- matrix(rnorm(200 * 100), nrow = 200)
+
+microbenchmark(fun2(dat), fun2alt(dat))
+```
+
+I used the cumsum function since it is highly optimized, along with t(apply) (even though that can be slow). Looking at the microbenchmark results we see that the alternate function is faster on average compared to the original slower function which used for loops.
+
+### Question 2
+
+```{r}
+set.seed(1234)
+v = sample(0:9, size = 100000, replace = TRUE)
+
+fun3 <- function(x) {
+  out <- numeric(length(x))
+  cumsum_x <- 0
+  for (i in seq_along(x)) {
+    if (x[i] == 0) {
+      cumsum_x <- 0
+    } else {
+      cumsum_x <- cumsum_x + x[i] 
+    }
+    out[i] <- cumsum_x
+  }
+  out
+}
+
+
+fun3alt = function(v) {
+  cs = cumsum(v) # Running total
+  last_zero = cummax((v == 0) * seq_along(v)) #index of the most recent 0 in the vector
+  baseline = numeric(length(v)) #vector of 0s
+  index = last_zero > 0 # index of everything thats not zero
+  baseline[index] = cs[last_zero[index]]
+  cs - baseline
+}
+
+microbenchmark(fun3(v), fun3alt(v), times = 1000)
+
+```
+
+For seed 1234 and vectors of size 100000, it looks like my alternate function is about 50% faster than the original function 3. My alternate function runs faster because it calculates the cumulative sum first and then deals with the zeros, instead of a for loops for each vector value.
+
+### Question 3
+
+```{r}
+library(parallel)
+
+sim_pi <- function(n = 1000, i = NULL) {
+  p <- matrix(runif(n*2), ncol = 2)
+  mean(rowSums(p^2) < 1) * 4
+}
+
+# Here is an example of the run
+set.seed(156)
+sim_pi(1000) # 3.132
+
+# This runs the simulation a 4,000 times, each with 10,000 points
+set.seed(1231)
+system.time({
+  ans1 <- unlist(lapply(1:4000, sim_pi, n = 10000))
+  print(mean(ans1))
+})
+
+time1 = replicate(30,system.time({
+ ans1 <- unlist(lapply(1:4000, sim_pi, n = 10000))
+}))
+```
+
+```{r}
+cl <- makeCluster(3L)
+clusterExport(cl, varlist = c("sim_pi"))
+clusterSetRNGStream(cl, 1231)  
+
+system.time({
+  ans2 <- unlist(parLapply(cl, 1:4000, sim_pi, n = 10000))
+  print(mean(ans2))
+})
+
+time2 = replicate(30, system.time({
+  ans2 <- unlist(parLapply(cl, 1:4000, sim_pi, n = 10000))
+}))
+
+stopCluster(cl)
+```
+
+I used parLapply to run the same process as above, just on multiple cores instead of 1.
+
+```{r}
+hist(ans1,
+     main = "Histogram of Pi estimates from Method 1",
+     xlab = "Pi Estimate",
+     ylab = "Count",
+     col = "blue")
+hist(ans2,
+     main = "Histogram of Pi estimates from Method 2",
+     xlab = "Pi Estimate",
+     ylab = "Count",
+     col = "darkgreen")
+```
+
+We see that with paralelization (3 cores), the computation takes about 1 second compared to the original one which takes about 2. Plotting both outputs as a histogram shows that both methods produce similar estimates of pi.
+
+#### Checking Time of Each Method
+
+```{r warning=FALSE}
+library(tidyr)
+library("wesanderson")
+
+time1small = time1[3,] %>% as.data.frame()
+names(time1small) = "Regular"
+time2small = time2[3,] %>% as.data.frame() 
+names(time2small) = "Multiple Cores"
+
+times = cbind(time1small, time2small) %>%
+  pivot_longer(cols = everything(),
+               names_to = "method",
+               values_to = "time")
+
+ggplot(times) +
+  geom_boxplot(aes(x = method, y = time, fill = method)) +
+  scale_fill_manual(values = wes_palette("Royal1")) + 
+  labs(x = "Method", y = "Time Elapsed")
+```
+
+The paralellized version runs consitently faster than the sequential version.
+
+## SQL
+
+```{r}
+surveys = read.csv("C:/Users/kylew/Downloads/1314459/surveys.csv")
+species = read.csv("C:/Users/kylew/Downloads/1314459/species.csv")
+plots = read.csv("C:/Users/kylew/Downloads/1314459/plots.csv")
+
+dbWriteTable(con, "surveys", surveys)
+dbWriteTable(con, "species", species)
+dbWriteTable(con, "plots", plots)
+```
+
+Here I read in the data
+
+### Question 4
+
+```{sql connection = con}
+PRAGMA table_info(surveys)
+```
+
+The query above helps us get a look at the data. Surveys has nine columns and many rows, with all but species_id and sex being integers.
+
+```{sql connection = con}
+SELECT month, day, year, species_id, ROUND(weight, 2)
+FROM surveys
+WHERE year = 1999
+ORDER BY species_id
+```
+
+The query does use the round function, however all of the weight values are integers. This effectively does nothing. The species ID column looks empty because we have some species with no id value.
+
+### Question 5
+
+```{sql connection = con}
+SELECT species_id, SUM(weight), MAX(weight), AVG(weight), MIN(weight)
+FROM surveys
+GROUP BY species_id;
+```
+
+For the 49 unique species ids, the total weights, max weight, mean weight, and min weight are shows. A lot of NA values.
+
+```{sql connection = con}
+SELECT species_id, SUM(weight), MAX(weight), AVG(weight), MIN(weight)
+FROM surveys
+WHERE weight >= 5 AND weight <= 10
+GROUP BY species_id
+```
+
+I used the where function to help remove weights outside the specified range.
+
+### Question 6
+
+```{r}
+result = dbGetQuery(con,
+                    "SELECT species_id,
+                    year,
+                    COUNT(*),
+                    AVG(weight) FROM surveys GROUP BY year,
+                    species_id")
+head(result)
+```
+
+For each different species ID and year I counted the number of observations and the average weight. I stored this result as an R object
+
+### Question 7
+
+```{sql connection = con}
+SELECT COUNT(*) AS count, taxa
+FROM species
+GROUP BY taxa
+HAVING COUNT(*) > 10
+```
+
+Birds have 13 species in their taxa and Rodents have 31.
+
+### Question 8
+
+```{sql connection = con}
+SELECT genus, plot_id, COUNT(species)
+FROM species
+INNER JOIN surveys ON species.species_id = surveys.species_id
+GROUP BY genus, plot_id
+HAVING COUNT(species) > 10
+ORDER BY plot_id, COUNT(species) DESC
+```
+
+```{r}
+result2 = dbGetQuery(con, "SELECT genus, plot_id, COUNT(species)
+FROM species
+INNER JOIN surveys ON species.species_id = surveys.species_id
+GROUP BY genus, plot_id
+HAVING COUNT(species) > 10
+ORDER BY plot_id, COUNT(species) DESC") #R result for later
+
+```
+
+### Question 9
+
+```{sql connection = con}
+SELECT species.species, plot_type, COUNT(*) AS numspecimens
+FROM species
+INNER JOIN surveys ON species.species_id = surveys.species_id
+INNER JOIN plots ON surveys.plot_id = plots.plot_id
+WHERE surveys.species_id != ""
+GROUP BY plot_type, species.species
+```
+
+For question 9 we wanted to see how many specimens of each species were captured in each type of plot excluding specimens of unknown species. To do this I counted the number of specimens for each plot and species, and then used a filter to exclude those with unknown species (even though the inner join should have removed them anyways).
+
+### Question 10
+
+```{sql connection = con}
+SELECT AVG(weight) AS Weight, species 
+FROM species
+INNER JOIN surveys ON species.species_id = surveys.species_id
+WHERE taxa = "Rodent"
+GROUP BY species
+```
+
+The above table displays some of the average weights by species.
+
+### Question 11
+
+```{r warning=FALSE, message=FALSE}
+library(plotly)
+library(knitr)
+
+head(result2) %>% kable()
+p = result2 %>%
+  filter(plot_id <=5) %>%
+  ggplot(aes(fill = genus,
+             y = `COUNT(species)`,
+             x = plot_id,
+             text = paste(
+      "Plot Number: ", plot_id, "<br>",
+      "Number of Species: ", `COUNT(species)`, "<br>",
+      "Genus: ", genus
+    ))) +
+  geom_bar(stat = "identity")
+ggplotly(p, tooltip = "text")
+```
+
+Behold my interactive plot!
+
+```{r warning=FALSE}
+result %>% inner_join(species) %>% plot_ly(x = ~year, y = ~`AVG(weight)`, color = ~species_id , type = "scatter", mode = "lines", line = list(shape = "spline"), connectgaps = TRUE, text = ~paste(
+      "Species:", species,
+      "<br>Year:", year,
+      "<br>Avg Weight:", round(`AVG(weight)`, 2)))
+
+#Filter out null values
+```
+
+To handle missing data and avoid gaps in the lines, I used "connectgaps = TRUE". To make the plot a little less noisy I smoothed the curve. To further reduce noise we could focus on only a subset of the data.
